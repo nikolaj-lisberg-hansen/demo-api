@@ -45,7 +45,8 @@ let movies = [
           }
         ]
       }
-    ]
+    ],
+    scoutbase_rating: ''
   },
   {
     title: 'Jurassic Park',
@@ -64,8 +65,27 @@ let movies = [
           }
         ]
       }
-    ]
+    ],
+    scoutbase_rating: ''
   },
+];
+
+/*
+    # Hardcode one session token for testing in Postman as authenticated user:
+*/
+const ANONYMOUS_USER_ID = uuidv4();
+const AUTHENTICATED_USER_ID = uuidv4();
+const AUTHENTICATED_USER_TOKEN = '00000000-0000-0000-0000-000000000000';
+
+let tokens = [
+  {
+    id: ANONYMOUS_USER_ID,
+    token: '',
+  },
+  {
+    id: AUTHENTICATED_USER_ID,
+    token: AUTHENTICATED_USER_TOKEN,
+  }
 ];
 
 /*
@@ -80,16 +100,14 @@ let movies = [
 
 let users = [
   {
-    id: uuidv4(),
+    id: ANONYMOUS_USER_ID,
     name: 'Anonymous user',
-    token: '',
     username: 'anonymous',
     password: '',
   },
   {
-    id: uuidv4(),
+    id: AUTHENTICATED_USER_ID,
     name: 'Authenticated user',
-    token: '00000000-0000-0000-0000-000000000000',
     username: 'authenticated',
     password: 'test',
   }
@@ -118,6 +136,7 @@ const typeDefs = gql`
     year: Int
     rating: Int
     actors: [Actor]
+    scoutbase_rating: String
   }
 
   "User"
@@ -156,7 +175,17 @@ const typeDefs = gql`
 */
 const resolvers = {
   Query: {
-    movies: () => movies,
+    movies: async (_, args, context ) => {
+      console.log('CONTEXT:\n',context);
+      let moviesClone = JSON.parse(JSON.stringify(movies));
+      if (context.user.username !== 'anonymous') {
+          for (let i in moviesClone) {
+            moviesClone[i].scoutbase_rating = 5+Math.floor(Math.random()*5)+'.0';
+          }
+      }
+      console.log('MOVIES:\n',moviesClone);
+      return moviesClone;
+    },
     users: () => users,
   },
   Mutation: {
@@ -166,14 +195,13 @@ const resolvers = {
       const user = {
         id: uuidv4(),
         name: args.username,
-        token: uuidv4(),
         username: args.username,
         password: args.password,
       }
       users.push(user);
       console.log('USERS:\n',JSON.stringify(users,null,2));
       return {
-        token: user.token,
+        token: "",
         user: {
           id: user.id,
           name: user.username
@@ -187,8 +215,14 @@ const resolvers = {
         return (user.username === args.username && user.password === args.password);
       });
       if (user) {
+        const session = {
+          id: user.id,
+          token: uuidv4(),
+        }
+        tokens.push(session);
+        console.log('TOKENS:\n',JSON.stringify(tokens,null,2));
         return {
-          token: user.token,
+          token: session.token,
           user: {
             id: user.id,
             name: user.username
@@ -227,9 +261,13 @@ const server = new ApolloServer({
     }
      // get the user token from the headers
      const token = req.headers.authorization || '';
-     // try to retrieve a user with the token
+     // try to retrieve a user id with the token
+     const session = tokens.find(function (session) {
+       return session.token === token;
+     });
+     // try to retrieve a user profile with session user id
      const user = users.find(function (user) {
-       return user.token === token;
+       return user.id === session.id;
      });
      // if (!user) throw new AuthenticationError('you must be logged in');
      // add the user to the context
